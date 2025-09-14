@@ -1,0 +1,26 @@
+# Python caches and bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.env/
+
+# Editor files
+*.swp
+*.swo
+*.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Game runtime files
+scores.txt
+
+# Jupyter & notebook stuff
+.ipynb_checkpoints/
+*.ipynb
