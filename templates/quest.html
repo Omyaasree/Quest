@@ -1,97 +1,97 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Quest Game</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { background: #111; color: #eee; }
-    #game-box { max-width: 700px; margin: 50px auto; background: #222; padding: 20px; border-radius: 12px; }
-    textarea { height: 400px; }
-  </style>
-</head>
-<body>
-  <div id="game-box">
-    <h2 class="text-center">⚔️ Quest Challenge ⚔️</h2>
-    <textarea id="output" class="form-control mb-3" readonly></textarea>
+<script>
+  const output = document.getElementById("output");
+  const input = document.getElementById("userInput");
+  const form = document.getElementById("answerForm");
+  const btn = document.getElementById("submitBtn");
 
-    <!-- Wrap input + button in a form so Enter triggers submit -->
-    <form id="answerForm" class="d-flex gap-2">
-      <input id="userInput" type="text" class="form-control" placeholder="Enter your answer..." autocomplete="off" autofocus>
-      <button id="submitBtn" class="btn btn-primary">Submit</button>
-    </form>
-  </div>
+  let gameStarted = false;   // becomes true when server confirms a runner
+  let runnerAlive = false;   // becomes true while the runner is alive
 
-  <script>
-    const output = document.getElementById("output");
-    const input = document.getElementById("userInput");
-    const form = document.getElementById("answerForm");
-    const btn = document.getElementById("submitBtn");
+  function append(text) {
+    if (!text) return;
+    output.value += text + "\n";
+    output.scrollTop = output.scrollHeight;
+  }
 
-    function append(text) {
-      if (!text) return;
-      output.value += text + "\n";
-      output.scrollTop = output.scrollHeight;
+  async function startGame() {
+    append("--- Starting game ---");
+    try {
+      const res = await fetch("/play", {
+        method: "POST",
+        credentials: "same-origin",       // <--- ensure session cookie is sent
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start" })
+      });
+      const data = await res.json();
+      append(data.output);
+      // If server returned that a runner exists, mark started
+      runnerAlive = !data.finished;
+      gameStarted = true;
+      if (data.finished) {
+        append("--- Game already finished on server ---");
+      }
+    } catch (e) {
+      append("Error starting game: " + e);
+      gameStarted = false;
+      runnerAlive = false;
+    }
+    input.focus();
+  }
+
+  async function sendAnswer(answer) {
+    if (!answer) return;
+    if (!gameStarted) {
+      append("Game not started yet. Wait a moment and try again.");
+      return;
+    }
+    if (!runnerAlive) {
+      append("No active runner on the server. Click Start again.");
+      return;
     }
 
-    async function startGame() {
-      try {
-        const res = await fetch("/play", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "start" })
-        });
-        const data = await res.json();
-        append(data.output);
-      } catch (e) {
-        append("Error starting game: " + e);
-      }
+    btn.disabled = true;
+    append("> " + answer);
+
+    try {
+      const res = await fetch("/play", {
+        method: "POST",
+        credentials: "same-origin",       // <--- ensure session cookie is sent
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "answer", answer })
+      });
+      const data = await res.json();
+      append(data.output);
+      // Update runnerAlive based on server's finished flag
+      runnerAlive = !data.finished;
+      if (data.finished) append("--- Game finished ---");
+    } catch (e) {
+      append("Network error: " + e);
+    } finally {
+      btn.disabled = false;
       input.focus();
     }
+  }
 
-    async function sendAnswer(answer) {
-      if (!answer) return;
-      btn.disabled = true;
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const val = input.value.trim();
+    if (!val) return;
+    sendAnswer(val);
+    input.value = "";
+  });
 
-      append("> " + answer);
+  btn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    const val = input.value.trim();
+    if (!val) return;
+    sendAnswer(val);
+    input.value = "";
+  });
 
-      try {
-        const res = await fetch("/play", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "answer", answer })
-        });
-        const data = await res.json();
-        append(data.output);
-        if (data.finished) append("--- Game finished ---");
-      } catch (e) {
-        append("Network error: " + e);
-      } finally {
-        btn.disabled = false;
-        input.focus();
-      }
-    }
-
-    // Handle form submit (Enter key or button press)
-    form.addEventListener("submit", (ev) => {
-      ev.preventDefault();
-      const val = input.value.trim();
-      if (!val) return;
-      sendAnswer(val);
-      input.value = "";
-    });
-
-    // keep button click handler for older browsers (optional)
-    btn.addEventListener("click", (ev) => {
-      ev.preventDefault(); // prevent any default form action (safety)
-      const val = input.value.trim();
-      if (!val) return;
-      sendAnswer(val);
-      input.value = "";
-    });
-
-    // Start the game on load
-    startGame();
-  </script>
-</body>
-</html>
+  // Start the game on load, but allow some time for session cookies to settle
+  // (if user just got redirected here)
+  window.addEventListener("load", () => {
+    // small delay helps ensure the session cookie from the form POST is in place
+    setTimeout(startGame, 150); 
+  });
+</script>
