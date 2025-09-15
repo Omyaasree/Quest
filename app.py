@@ -148,11 +148,13 @@ def play():
     if action == "answer":
         answer = data.get("answer", "")
         if sid not in runners:
-            return jsonify({"output": "No game in progress. Click Start first.", "finished": True})
+            # don't tell the client the game is finished if no runner exists
+            return jsonify({"output": "No game in progress. Click Start first.", "finished": False})
         runner = runners[sid]
         runner.send_input(answer)
         out = runner.get_output(wait_seconds=2.0)
         return jsonify({"output": out, "finished": runner.finished})
+
     return jsonify({"output": "Unknown action", "finished": False})
 
 # --- Paste your exact game code here (main, qn1, qn2, qn3) unchanged ---
