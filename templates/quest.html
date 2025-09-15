@@ -4,8 +4,8 @@
   const form = document.getElementById("answerForm");
   const btn = document.getElementById("submitBtn");
 
-  let gameStarted = false;   // becomes true when server confirms a runner
-  let runnerAlive = false;   // becomes true while the runner is alive
+  let gameStarted = false;
+  let runnerAlive = false;
 
   function append(text) {
     if (!text) return;
@@ -16,21 +16,21 @@
   async function startGame() {
     append("--- Starting game ---");
     try {
+      console.log("Sending start request...");
       const res = await fetch("/play", {
         method: "POST",
-        credentials: "same-origin",       // <--- ensure session cookie is sent
+        credentials: "same-origin",            // <--- send cookies
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "start" })
       });
       const data = await res.json();
+      console.log("Start response:", data);
       append(data.output);
-      // If server returned that a runner exists, mark started
-      runnerAlive = !data.finished;
       gameStarted = true;
-      if (data.finished) {
-        append("--- Game already finished on server ---");
-      }
+      runnerAlive = !data.finished;
+      if (data.finished) append("--- Game already finished on server ---");
     } catch (e) {
+      console.error("Error starting game:", e);
       append("Error starting game: " + e);
       gameStarted = false;
       runnerAlive = false;
@@ -55,16 +55,17 @@
     try {
       const res = await fetch("/play", {
         method: "POST",
-        credentials: "same-origin",       // <--- ensure session cookie is sent
+        credentials: "same-origin",            // <--- send cookies
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "answer", answer })
       });
       const data = await res.json();
+      console.log("Answer response:", data);
       append(data.output);
-      // Update runnerAlive based on server's finished flag
       runnerAlive = !data.finished;
       if (data.finished) append("--- Game finished ---");
     } catch (e) {
+      console.error("Network error:", e);
       append("Network error: " + e);
     } finally {
       btn.disabled = false;
@@ -88,10 +89,6 @@
     input.value = "";
   });
 
-  // Start the game on load, but allow some time for session cookies to settle
-  // (if user just got redirected here)
-  window.addEventListener("load", () => {
-    // small delay helps ensure the session cookie from the form POST is in place
-    setTimeout(startGame, 150); 
-  });
+  // Slight delay to ensure session cookie from POST-redirect has settled
+  window.addEventListener("load", () => setTimeout(startGame, 150));
 </script>
