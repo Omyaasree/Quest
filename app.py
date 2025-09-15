@@ -1,29 +1,27 @@
 import os
-from flask import Flask, request, jsonify, send_from_directory, session, redirect
+from flask import Flask, request, jsonify, session, redirect, render_template
 import threading, builtins, time, uuid
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-to-a-secret")
 
-# add this line
+# Thread-safe file writing
 save_lock = threading.Lock()
-
-
 def save_progress(team, players, uid, points, stage):
     with save_lock:
         with open("scores.txt", "a", encoding="utf-8") as f:
-            f.write(f"{uid},{team},{players},Stage {stage},{points}\n")
-
-
+            f.write(f"ID: {uid}\n")
+            f.write(f"Team name: {team}\n")
+            f.write(f"Players: {players}\n")
+            f.write(f"Stage: {stage}\n")
+            f.write(f"Points: {points}\n")
+            f.write("-" * 30 + "\n")  # optional separator between entries
 
 # --- UID Generator ---
 def make_uid(team, players):
-    # initials = first letter of each player (strip spaces)
     initials = "".join([p.strip()[0].upper() for p in players.split(",") if p.strip()])
-    # short code = 6-char unique ID
     short_code = str(uuid.uuid4())[:6].upper()
     return f"{team.upper()}-{initials}-{short_code}"
-
 
 # --- WebIO class ---
 class WebIO:
@@ -58,14 +56,12 @@ class GameRunner:
     def __init__(self, team, players, uid):
         self.webio = WebIO()
         self.finished = False
-        self.finished_time = None   # when the runner finishes
-        self.start_time = time.time()  # when the runner started
-        # pass team info into the thread
+        self.finished_time = None
+        self.start_time = time.time()
         self.thread = threading.Thread(
             target=self._run_main, args=(team, players, uid), daemon=True
         )
         self.thread.start()
-
 
     def _run_main(self, team, players, uid):
         orig_input = builtins.input
@@ -73,8 +69,7 @@ class GameRunner:
         builtins.input = self.webio.web_input
         builtins.print = self.webio.web_print
         try:
-            main(team, players, uid)   # game runs fully
-            # ✅ Only mark finished *after* main() is completely done
+            main(team, players, uid)
             self.finished = True
             self.finished_time = time.time()
         except Exception as e:
@@ -87,7 +82,6 @@ class GameRunner:
             with self.webio.cond:
                 self.webio.cond.notify_all()
 
-
     def send_input(self, text):
         self.webio.send_input(text)
     def get_output(self, wait_seconds=2.0):
@@ -98,11 +92,9 @@ class GameRunner:
             out = self.webio.get_output_and_clear()
         return out
 
-
+# --- Cleanup old runners ---
+runners = {}
 def cleanup_runners(max_age_seconds=300):
-    """
-    Remove finished runners that are older than max_age_seconds.
-    """
     now = time.time()
     for sid, runner in list(runners.items()):
         if getattr(runner, "finished", False):
@@ -113,15 +105,14 @@ def cleanup_runners(max_age_seconds=300):
                 except KeyError:
                     pass
 
-
-
-# --- runners per session ---
-runners = {}
-
 # --- Routes ---
 @app.route("/")
 def index():
-    return send_from_directory("templates", "index.html")
+    return render_template("index.html")
+
+@app.route("/quest")
+def quest():
+    return render_template("quest.html")
 
 @app.route("/start_quest", methods=["POST"])
 def start_quest():
@@ -129,27 +120,15 @@ def start_quest():
     players = (request.form.get("players") or "").strip()
     if not team or not players:
         return "Team and players are required", 400
-
-    # only make a new uid once per browser session
     if "uid" not in session:
         session["uid"] = make_uid(team, players)
-
     session["team"] = team
     session["players"] = players
-
     return redirect("/quest")
-
-
-@app.route("/quest")
-def quest():
-    return send_from_directory("templates", "quest.html")
 
 @app.route("/play", methods=["POST"])
 def play():
-
     cleanup_runners()
-
-
     data = request.get_json() or {}
     action = data.get("action", "")
     if "sid" not in session:
@@ -161,12 +140,11 @@ def play():
             players = session.get("players")
             uid = session.get("uid")
             runners[sid] = GameRunner(team, players, uid)
-            out = runners[sid].get_output(wait_seconds=2.0)   # get initial output
+            out = runners[sid].get_output(wait_seconds=2.0)
             return jsonify({"output": out, "finished": runners[sid].finished})
         else:
             out = runners[sid].get_output(wait_seconds=0.5)
             return jsonify({"output": out, "finished": runners[sid].finished})
-
     if action == "answer":
         answer = data.get("answer", "")
         if sid not in runners:
@@ -176,11 +154,6 @@ def play():
         out = runner.get_output(wait_seconds=2.0)
         return jsonify({"output": out, "finished": runner.finished})
     return jsonify({"output": "Unknown action", "finished": False})
-
-# --- Serve static files ---
-@app.route("/static/<path:filename>")
-def static_files(filename):
-    return send_from_directory("static", filename)
 
 # --- Paste your exact game code here (main, qn1, qn2, qn3) unchanged ---
 def qn1(team, players, uid): 
@@ -307,4 +280,5 @@ def main(team, players, uid):
 
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get("PORT", 5000))  # Use Render's assigned port
+    app.run(host="0.0.0.0", port=port)       # Bind to all interfaces
